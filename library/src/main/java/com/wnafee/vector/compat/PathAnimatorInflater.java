@@ -13,6 +13,7 @@ package com.wnafee.vector.compat;
  * or implied. See the License for the specific language governing permissions and limitations under
  * the License.
  */
+
 import android.animation.Animator;
 import android.animation.AnimatorSet;
 import android.animation.ArgbEvaluator;
@@ -24,11 +25,14 @@ import android.content.res.Resources;
 import android.content.res.TypedArray;
 import android.content.res.XmlResourceParser;
 import android.graphics.Color;
+import android.graphics.Path;
+import android.support.v4.view.animation.PathInterpolatorCompat;
 import android.util.AttributeSet;
 import android.util.Log;
 import android.util.Xml;
 import android.view.InflateException;
 import android.view.animation.AnimationUtils;
+import android.view.animation.Interpolator;
 
 import com.wnafee.vector.R;
 
@@ -198,10 +202,20 @@ public class PathAnimatorInflater {
 
         parseAnimatorFromTypeArray(anim, arrayAnimator, arrayObjectAnimator);
 
-        final int resId =
-                arrayAnimator.getResourceId(R.styleable.Animator_android_interpolator, 0);
+        final int resId = arrayAnimator.getResourceId(R.styleable.Animator_android_interpolator, 0);
         if (resId > 0) {
-            anim.setInterpolator(AnimationUtils.loadInterpolator(c, resId));
+            try{
+                anim.setInterpolator(AnimationUtils.loadInterpolator(c, resId));
+            }
+            catch(RuntimeException e){ //FIXME //TODO MXM
+                try{
+                    Log.d(TAG, "Fallback loading interpolator!");
+                    anim.setInterpolator(loadInterpolator(c, resId));
+                }
+                catch (Exception e2){
+                    e2.printStackTrace();
+                }
+            }
         }
 
         arrayAnimator.recycle();
@@ -210,6 +224,93 @@ public class PathAnimatorInflater {
         }
 
         return anim;
+    }
+
+    /**
+     * Loads an {@link Interpolator} object from a resource
+     *
+     * @param context Application context used to access resources
+     * @param id The resource id of the animation to load
+     * @return The animation object reference by the specified id
+     * @throws Resources.NotFoundException
+     */
+    public static Interpolator loadInterpolator(Context context, int id)
+            throws Resources.NotFoundException {
+        XmlResourceParser parser = null;
+        try {
+            parser = context.getResources().getAnimation(id);
+            return createInterpolatorFromXml(context, context.getResources(), context.getTheme(), parser);
+        } catch (XmlPullParserException ex) {
+            Resources.NotFoundException rnf = new Resources.NotFoundException("Can't load animation resource ID #0x" +
+                    Integer.toHexString(id));
+            rnf.initCause(ex);
+            throw rnf;
+        } catch (IOException ex) {
+            Resources.NotFoundException rnf = new Resources.NotFoundException("Can't load animation resource ID #0x" +
+                    Integer.toHexString(id));
+            rnf.initCause(ex);
+            throw rnf;
+        } finally {
+            if (parser != null) parser.close();
+        }
+    }
+    /**
+     * Loads an {@link Interpolator} object from a resource
+     *
+     * @param res The resources
+     * @param id The resource id of the animation to load
+     * @return The interpolator object reference by the specified id
+     * @throws Resources.NotFoundException
+     * @hide
+     */
+    public static Interpolator loadInterpolator(Context ctx, Resources res, Resources.Theme theme, int id) throws Resources.NotFoundException {
+        XmlResourceParser parser = null;
+        try {
+            parser = res.getAnimation(id);
+            return createInterpolatorFromXml(ctx, res, theme, parser);
+        } catch (XmlPullParserException ex) {
+            Resources.NotFoundException rnf = new Resources.NotFoundException("Can't load animation resource ID #0x" +
+                    Integer.toHexString(id));
+            rnf.initCause(ex);
+            throw rnf;
+        } catch (IOException ex) {
+            Resources.NotFoundException rnf = new Resources.NotFoundException("Can't load animation resource ID #0x" +
+                    Integer.toHexString(id));
+            rnf.initCause(ex);
+            throw rnf;
+        } finally {
+            if (parser != null)
+                parser.close();
+        }
+    }
+    private static Interpolator createInterpolatorFromXml(Context ctx, Resources res, Resources.Theme theme, XmlPullParser parser)
+            throws XmlPullParserException, IOException {
+        Interpolator interpolator = null;
+        // Make sure we are on a start tag.
+        int type;
+        int depth = parser.getDepth();
+        while (((type = parser.next()) != XmlPullParser.END_TAG || parser.getDepth() > depth)
+                && type != XmlPullParser.END_DOCUMENT) {
+            if (type != XmlPullParser.START_TAG) {
+                continue;
+            }
+            AttributeSet attrs = Xml.asAttributeSet(parser);
+            String name = parser.getName();
+            if (name.equals("pathInterpolator")) { //FIXME //TODO MXM
+                try{
+                    String stringPath = parser.getAttributeValue("http://schemas.android.com/apk/res-auto", "vc_pathData");
+                    Log.d(TAG, "Creating pathInterpolator (fallback), pathData: "+stringPath);
+                    Path path = PathParser.createPathFromPathData(stringPath);
+                    interpolator = PathInterpolatorCompat.create(path);
+                }
+                catch(Exception e){
+                    e.printStackTrace();
+                }
+            } else {
+                throw new RuntimeException("Unknown interpolator name: " + parser.getName());
+            }
+        }
+        return interpolator;
     }
 
     /**
